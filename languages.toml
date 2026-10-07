@@ -1,0 +1,17 @@
+# languages.toml — language registry for pre-llm-checks
+# Each language entry must have: extensions, project_files, verification
+# Top-level ignore_extensions are never treated as source files.
+
+ignore_extensions = [
+  ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".lock",
+  ".png", ".jpg", ".jpeg", ".svg", ".ico", ".gif", ".pdf",
+  ".zip", ".tar", ".gz", ".whl", ".egg-info",
+]
+
+[languages.python]
+extensions    = [".py"]
+project_files = ["pyproject.toml", "requirements.txt"]
+verification  = "untested"
+
+[languages.python.stages]
+# Populated in a later ticket; empty table passes validation.
