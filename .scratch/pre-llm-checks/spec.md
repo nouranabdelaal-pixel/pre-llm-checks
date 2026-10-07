@@ -280,10 +280,11 @@ Tests verify observable behaviour at the boundary of the script: what it prints 
 ### Fixture-based integration tests
 
 - Test fixtures live under `tests/fixtures/`.
-- Per-language fixtures: `ok`, `build-fail`, `test-fail`, `lint-fail`, `no-tests`.
+- Per-language fixtures: `ok`, `build-fail`, `test-fail`, `lint-fail`, `no-tests`. Not every fixture applies to every language — Python has no `build-fail` fixture because it has no build stage.
 - Shared edge-case fixtures: `risky-scripts`, `duplicate-scripts`, `hang`, `monorepo`, `missing-deps`.
-- `tests/fixtures/EXPECTED.md` records the expected status per stage for each fixture.
-- A language's verification tag moves from `untested` to `tested` in `languages.toml` only when all its fixtures produce output matching `EXPECTED.md`.
+- `tests/fixtures/EXPECTED.md` records the expected status per stage for each fixture that applies to each language.
+- A language's verification tag moves from `untested` to `tested` in `languages.toml` only when all *applicable* fixtures for that language produce output matching `EXPECTED.md`. Fixtures that do not apply to a language are not required for promotion.
+- Language fixtures use real runners and real tools (e.g. `npm run` with real Node for JS/TS); fixture scripts are written to be dependency-free where possible (e.g. inline `node -e` expressions requiring no `node_modules`).
 - v1 targets tested status for: Java, JS/TS, Python.
 
 ### Seam

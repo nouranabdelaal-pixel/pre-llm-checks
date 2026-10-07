@@ -3,15 +3,549 @@
 # Top-level ignore_extensions are never treated as source files.
 
 ignore_extensions = [
-  ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".lock",
-  ".png", ".jpg", ".jpeg", ".svg", ".ico", ".gif", ".pdf",
-  ".zip", ".tar", ".gz", ".whl", ".egg-info",
+  ".md", ".txt", ".rst", ".adoc",
+  ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+  ".lock", ".sum",
+  ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp",
+  ".pdf", ".zip", ".tar", ".gz", ".bz2", ".xz", ".whl", ".egg-info",
+  ".class", ".pyc", ".pyo", ".pyd",
+  ".exe", ".dll", ".so", ".dylib", ".a", ".lib",
+  ".map", ".min.js", ".min.css",
+  ".env", ".env.local", ".env.example",
+  ".gitignore", ".gitattributes", ".editorconfig",
+  ".DS_Store", "Thumbs.db",
 ]
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
 
 [languages.python]
 extensions    = [".py"]
 project_files = ["pyproject.toml", "requirements.txt"]
 verification  = "untested"
 
-[languages.python.stages]
-# Populated in a later ticket; empty table passes validation.
+[languages.python.stages.lint]
+exact    = ["lint"]
+prefixes = ["lint:"]
+excludes = [":fix", ":watch"]
+
+[languages.python.stages.tests]
+exact    = ["test", "tests"]
+prefixes = ["test:"]
+excludes = [":e2e", ":docker"]
+
+[languages.python.dependency_check]
+error_patterns = [
+  "ModuleNotFoundError",
+  "No module named",
+  "ImportError",
+  "cannot import name",
+]
+
+# ---------------------------------------------------------------------------
+# JavaScript / TypeScript (Node)
+# ---------------------------------------------------------------------------
+
+[languages.node]
+extensions    = [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"]
+project_files = ["package.json"]
+verification  = "untested"
+
+[languages.node.stages.build]
+exact    = ["build"]
+prefixes = ["build:"]
+excludes = [":watch", ":dev", ":docker", ":deploy"]
+
+[languages.node.stages.lint]
+exact    = ["lint"]
+prefixes = ["lint:"]
+excludes = [":fix", ":watch"]
+config_triggers = [
+  ".eslintrc", ".eslintrc.js", ".eslintrc.json", ".eslintrc.yml", ".eslintrc.yaml",
+  "eslint.config.js", "eslint.config.mjs", "tsconfig.json",
+]
+
+[languages.node.stages.tests]
+exact    = ["test"]
+prefixes = ["test:"]
+excludes = [":e2e", ":watch", ":docker"]
+
+[languages.node.stages.coverage]
+exact    = ["coverage"]
+prefixes = ["coverage:"]
+excludes = []
+
+[languages.node.dependency_check]
+filesystem     = "node_modules"
+error_patterns = [
+  "Cannot find module",
+  "MODULE_NOT_FOUND",
+  "command not found: jest",
+  "command not found: vitest",
+]
+
+[languages.node.coverage]
+output_pattern = "All files\\s*\\|[^|]*\\|[^|]*\\|[^|]*\\|\\s*(\\d+\\.?\\d*)"
+
+[[languages.node.coverage.report_files]]
+path   = "coverage/coverage-summary.json"
+format = "istanbul-json-summary"
+
+# ---------------------------------------------------------------------------
+# Java — Maven
+# ---------------------------------------------------------------------------
+
+[languages.java_maven]
+extensions    = [".java"]
+project_files = ["pom.xml"]
+verification  = "untested"
+
+[languages.java_maven.stages.build]
+builtin  = ["compile"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_maven.stages.lint]
+builtin         = ["checkstyle:check", "pmd:check", "spotbugs:check"]
+config_triggers = ["checkstyle.xml", ".checkstyle.xml", "pmd.xml", "spotbugs.xml"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_maven.stages.tests]
+builtin  = ["test"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_maven.stages.coverage]
+builtin         = ["jacoco:report"]
+config_triggers = []
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_maven.dependency_check]
+error_patterns = [
+  "Could not resolve dependencies",
+  "Artifact * not found",
+  "Cannot access central",
+  "Failed to read artifact",
+]
+
+[languages.java_maven.coverage]
+output_pattern = "Total.*?(\\d+)%"
+
+[[languages.java_maven.coverage.report_files]]
+path   = "target/site/jacoco/jacoco.xml"
+format = "jacoco-xml"
+
+# ---------------------------------------------------------------------------
+# Java — Gradle
+# ---------------------------------------------------------------------------
+
+[languages.java_gradle]
+extensions    = [".java"]
+project_files = ["build.gradle", "build.gradle.kts"]
+verification  = "untested"
+
+[languages.java_gradle.stages.build]
+builtin  = ["compileJava"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_gradle.stages.lint]
+builtin         = ["checkstyleMain", "pmdMain", "spotbugsMain"]
+config_triggers = ["checkstyle.xml", "config/checkstyle/checkstyle.xml"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_gradle.stages.tests]
+builtin  = ["test"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_gradle.stages.coverage]
+builtin  = ["jacocoTestReport"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.java_gradle.dependency_check]
+error_patterns = [
+  "Could not resolve",
+  "Could not find",
+  "Execution failed for task",
+  "BUILD FAILED",
+]
+
+[languages.java_gradle.coverage]
+output_pattern = "Total.*?(\\d+)%"
+
+[[languages.java_gradle.coverage.report_files]]
+path   = "build/reports/jacoco/test/jacocoTestReport.xml"
+format = "jacoco-xml"
+
+# ---------------------------------------------------------------------------
+# Kotlin — Gradle
+# ---------------------------------------------------------------------------
+
+[languages.kotlin]
+extensions    = [".kt", ".kts"]
+project_files = ["build.gradle.kts", "build.gradle"]
+verification  = "untested"
+
+[languages.kotlin.stages.build]
+builtin  = ["compileKotlin"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.kotlin.stages.lint]
+builtin         = ["detekt", "ktlintCheck"]
+config_triggers = ["detekt.yml", "detekt.yaml", ".editorconfig"]
+exact    = []
+prefixes = []
+excludes = [":format", ":fix"]
+
+[languages.kotlin.stages.tests]
+builtin  = ["test"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.kotlin.stages.coverage]
+builtin  = ["jacocoTestReport", "koverReport"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.kotlin.dependency_check]
+error_patterns = [
+  "Could not resolve",
+  "Could not find",
+  "BUILD FAILED",
+]
+
+[languages.kotlin.coverage]
+output_pattern = "Total.*?(\\d+)%"
+
+[[languages.kotlin.coverage.report_files]]
+path   = "build/reports/jacoco/test/jacocoTestReport.xml"
+format = "jacoco-xml"
+
+# ---------------------------------------------------------------------------
+# Go
+# ---------------------------------------------------------------------------
+
+[languages.go]
+extensions    = [".go"]
+project_files = ["go.mod"]
+verification  = "untested"
+
+[languages.go.stages.build]
+builtin  = ["go build ./..."]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.go.stages.lint]
+builtin         = []
+config_triggers = [".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.go.stages.tests]
+builtin  = ["go test ./..."]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.go.stages.coverage]
+builtin  = ["go test -coverprofile=coverage.out ./..."]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.go.dependency_check]
+error_patterns = [
+  "cannot find module",
+  "no required module",
+  "missing go.sum entry",
+  "no matching versions",
+]
+
+[languages.go.coverage]
+output_pattern = "total:\\s+\\(statements\\)\\s+(\\d+\\.?\\d*)%"
+
+[[languages.go.coverage.report_files]]
+path   = "coverage.out"
+format = "go-cover"
+
+# ---------------------------------------------------------------------------
+# C# / .NET
+# ---------------------------------------------------------------------------
+
+[languages.dotnet]
+extensions    = [".cs", ".fs", ".vb"]
+project_files = ["*.sln", "*.csproj"]
+verification  = "untested"
+
+[languages.dotnet.stages.build]
+builtin  = ["dotnet build"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.dotnet.stages.lint]
+builtin         = ["dotnet format --verify-no-changes"]
+config_triggers = [".editorconfig"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.dotnet.stages.tests]
+builtin  = ["dotnet test"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.dotnet.stages.coverage]
+builtin  = ["dotnet test --collect:\"XPlat Code Coverage\""]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.dotnet.dependency_check]
+error_patterns = [
+  "Unable to find package",
+  "error NU1",
+  "Package restore failed",
+  "MSBUILD : error",
+]
+
+[languages.dotnet.coverage]
+output_pattern = "Line coverage:\\s+(\\d+\\.?\\d*)%"
+
+[[languages.dotnet.coverage.report_files]]
+path   = "TestResults/**/coverage.cobertura.xml"
+format = "cobertura-xml"
+
+# ---------------------------------------------------------------------------
+# Rust
+# ---------------------------------------------------------------------------
+
+[languages.rust]
+extensions    = [".rs"]
+project_files = ["Cargo.toml"]
+verification  = "untested"
+
+[languages.rust.stages.build]
+builtin  = ["cargo build"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.rust.stages.lint]
+builtin         = ["cargo clippy -- -D warnings"]
+config_triggers = [".clippy.toml", "clippy.toml"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.rust.stages.tests]
+builtin  = ["cargo test"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.rust.stages.coverage]
+builtin         = []
+config_triggers = ["tarpaulin.toml", ".tarpaulin.toml"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.rust.dependency_check]
+error_patterns = [
+  "error[E0432]",
+  "no matching package",
+  "failed to select a version",
+  "failed to load source",
+]
+
+[languages.rust.coverage]
+output_pattern = "(\\d+\\.?\\d*)% coverage"
+
+[[languages.rust.coverage.report_files]]
+path   = "tarpaulin-report.xml"
+format = "cobertura-xml"
+
+# ---------------------------------------------------------------------------
+# PHP
+# ---------------------------------------------------------------------------
+
+[languages.php]
+extensions    = [".php"]
+project_files = ["composer.json"]
+verification  = "untested"
+
+[languages.php.stages.lint]
+builtin         = []
+config_triggers = [
+  "phpcs.xml", ".phpcs.xml", "phpcs.xml.dist",
+  "phpstan.neon", "phpstan.neon.dist",
+]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.php.stages.tests]
+builtin         = ["vendor/bin/phpunit"]
+config_triggers = ["phpunit.xml", "phpunit.xml.dist"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.php.dependency_check]
+filesystem     = "vendor"
+error_patterns = [
+  "No such file or directory",
+  "Could not find",
+  "composer install",
+]
+
+[languages.php.coverage]
+output_pattern = "Lines:\\s+(\\d+\\.?\\d*)%"
+
+[[languages.php.coverage.report_files]]
+path   = "coverage.xml"
+format = "cobertura-xml"
+
+# ---------------------------------------------------------------------------
+# Ruby
+# ---------------------------------------------------------------------------
+
+[languages.ruby]
+extensions    = [".rb"]
+project_files = ["Gemfile"]
+verification  = "untested"
+
+[languages.ruby.stages.lint]
+builtin         = ["bundle exec rubocop"]
+config_triggers = [".rubocop.yml", ".rubocop.yaml"]
+exact    = []
+prefixes = []
+excludes = [":fix", ":auto-correct"]
+
+[languages.ruby.stages.tests]
+builtin         = ["bundle exec rspec"]
+config_triggers = ["spec", ".rspec"]
+exact    = ["test", "spec"]
+prefixes = []
+excludes = []
+
+[languages.ruby.dependency_check]
+error_patterns = [
+  "Could not find gem",
+  "bundler: command not found",
+  "Bundler::GemNotFound",
+]
+
+[languages.ruby.coverage]
+output_pattern = "(\\d+\\.?\\d*)% covered"
+
+[[languages.ruby.coverage.report_files]]
+path   = "coverage/.resultset.json"
+format = "simplecov-json"
+
+# ---------------------------------------------------------------------------
+# Swift
+# ---------------------------------------------------------------------------
+
+[languages.swift]
+extensions    = [".swift"]
+project_files = ["Package.swift"]
+verification  = "untested"
+
+[languages.swift.stages.build]
+builtin  = ["swift build"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.swift.stages.lint]
+builtin         = ["swiftlint"]
+config_triggers = [".swiftlint.yml", ".swiftlint.yaml"]
+exact    = []
+prefixes = []
+excludes = [":fix", ":autocorrect"]
+
+[languages.swift.stages.tests]
+builtin  = ["swift test"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.swift.dependency_check]
+error_patterns = [
+  "error: no such module",
+  "error: missing required module",
+  "could not build Objective-C module",
+]
+
+[languages.swift.coverage]
+output_pattern = "(\\d+\\.?\\d*)%"
+
+[[languages.swift.coverage.report_files]]
+path   = ".build/debug/codecov/*.json"
+format = "xcode-json"
+
+# ---------------------------------------------------------------------------
+# C / C++
+# ---------------------------------------------------------------------------
+
+[languages.cpp]
+extensions    = [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx"]
+project_files = ["CMakeLists.txt", "Makefile"]
+verification  = "untested"
+
+[languages.cpp.stages.build]
+builtin  = ["cmake --build .", "make"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.cpp.stages.lint]
+builtin         = ["clang-tidy"]
+config_triggers = [".clang-tidy", ".clang-format"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.cpp.stages.tests]
+builtin  = ["ctest --output-on-failure", "make test"]
+exact    = []
+prefixes = []
+excludes = []
+
+[languages.cpp.dependency_check]
+error_patterns = [
+  "No such file or directory",
+  "fatal error:",
+  "cannot find -l",
+  "ld: library not found",
+]
+
+[languages.cpp.coverage]
+output_pattern = "lines.*?(\\d+\\.?\\d*)%"
+
+[[languages.cpp.coverage.report_files]]
+path   = "coverage.xml"
+format = "cobertura-xml"

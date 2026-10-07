@@ -10,11 +10,11 @@
 - [ ] `dependency_check` for Node uses a filesystem check: absence of `node_modules/` triggers `dependencies_missing`.
 - [ ] `dependency_check` also includes `error_patterns` for npm install errors seen in output (e.g. `Cannot find module`).
 - [ ] Runner is `npm run <script>`; no wrapper preference needed (npm is always the runner).
-- [ ] `tests/fixtures/node/ok/`: a minimal package.json with passing build, lint, and test scripts; running the script exits 0, table shows all `pass`.
-- [ ] `tests/fixtures/node/build-fail/`: build script exits non-zero; lint and tests are skipped; exit code 1.
-- [ ] `tests/fixtures/node/test-fail/`: build passes, test script exits non-zero; exit code 1.
-- [ ] `tests/fixtures/node/lint-fail/`: build passes, lint script exits non-zero; exit code 1.
+- [ ] `tests/fixtures/node/ok/`: a minimal `package.json` with passing build, lint, and test scripts using inline Node one-liners (e.g. `"test": "node -e \"process.exit(0)\""`); no `npm install` required. Running the script exits 0, table shows all `pass`.
+- [ ] `tests/fixtures/node/build-fail/`: build script uses `node -e "process.exit(1)"`; lint and tests are skipped; exit code 1.
+- [ ] `tests/fixtures/node/test-fail/`: build passes, test script uses `node -e "process.exit(1)"`; exit code 1.
+- [ ] `tests/fixtures/node/lint-fail/`: build passes, lint script uses `node -e "process.exit(1)"`; exit code 1.
 - [ ] `tests/fixtures/node/no-tests/`: no test script present; tests stage is `SKIP`; exit code 0.
-- [ ] `tests/fixtures/node/` fixtures use only scripts that can run without a real Node installation (e.g. shell scripts or Python stubs) so CI can run them cross-platform without npm.
+- [ ] All fixture scripts use the real `npm run` runner and real Node; no stubs or mocks. Fixtures are dependency-free (no `node_modules` needed) because the scripts contain only inline `node -e` expressions.
 - [ ] All fixture results match `tests/fixtures/EXPECTED.md`.
-- [ ] `languages.toml` entry for JS/TS has `verification = "tested"` after all fixtures pass.
+- [ ] `languages.toml` entry for JS/TS has `verification = "tested"` after all applicable fixtures pass.
