@@ -1,0 +1,6 @@
+[project]
+name = "no-tests"
+version = "0.1.0"
+
+[tool.taskipy.tasks]
+lint = "python -c \"import sys; sys.exit(0)\""

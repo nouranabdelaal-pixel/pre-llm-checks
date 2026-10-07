@@ -1,0 +1,6 @@
+[project]
+name = "missing-deps"
+version = "0.1.0"
+
+[tool.taskipy.tasks]
+test = "python -c \"raise ModuleNotFoundError('No module named missing_lib')\""

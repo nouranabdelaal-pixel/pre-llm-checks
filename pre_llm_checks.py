@@ -182,9 +182,10 @@ def select_runner(
     lang_lower = language.lower()
 
     if lang_lower in {"node", "javascript", "typescript", "js", "ts", "js/ts"}:
-        if not _on_path("npm"):
+        npm = shutil.which("npm")
+        if not npm:
             return RunnerNotFound("npm")
-        return ["npm", "run", script]
+        return [npm, "run", script]
 
     if lang_lower in {"java_maven", "java-maven", "maven"}:
         wrapper = _find_wrapper(
@@ -192,8 +193,9 @@ def select_runner(
         )
         if wrapper:
             return [str(wrapper), script]
-        if _on_path("mvn"):
-            return ["mvn", script]
+        mvn = shutil.which("mvn")
+        if mvn:
+            return [mvn, script]
         return RunnerNotFound("mvn")
 
     if lang_lower in {
@@ -208,8 +210,9 @@ def select_runner(
         )
         if wrapper:
             return [str(wrapper), script]
-        if _on_path("gradle"):
-            return ["gradle", script]
+        gradle = shutil.which("gradle")
+        if gradle:
+            return [gradle, script]
         return RunnerNotFound("gradle")
 
     runner_cmd = lang_config.get("runner")
@@ -1088,8 +1091,12 @@ def run_project(
         stage_status = "pass"
 
         for pc in planned_cmds:
+            # The script name (npm script key, maven goal, etc.) is scripts[0].
+            # The command_str is the raw value (e.g. the RHS of a package.json script).
+            script_key = pc.scripts[0] if pc.scripts else pc.command_str
+
             # Build the actual argv
-            runner = select_runner(proj.language, proj.path, pc.command_str, lang_cfg)
+            runner = select_runner(proj.language, proj.path, script_key, lang_cfg)
             if isinstance(runner, RunnerNotFound):
                 # tool_not_installed — skip this command
                 stage_results.append(
@@ -1106,15 +1113,27 @@ def run_project(
                 )
                 continue
 
-            # For built-in tasks and generic runners, the command_str IS the full command
-            # For npm run, runner already includes script name
-            # Determine actual argv
-            if proj.language == "node" and runner[0] == "npm":
-                # runner is already ["npm", "run", script_name]
+            # For npm/yarn/pnpm: runner is ["npm", "run", script_key] — use as-is.
+            # For maven/gradle built-ins: runner is [wrapper, goal] — use as-is.
+            # For generic built-ins (go build ./..., cargo build, etc.):
+            #   the command_str is the full shell command; split it into argv.
+            runner0 = (
+                Path(runner[0]).name.lower().replace(".cmd", "").replace(".exe", "")
+            )
+            if runner0 in ("npm", "yarn", "pnpm"):
+                # runner is ["npm_path", "run", script_key] — use as-is
+                argv = runner
+            elif runner0 in ("mvn", "mvnw", "gradle", "gradlew"):
+                # runner is [wrapper_or_global, goal] — use as-is
                 argv = runner
             else:
-                # For built-ins, split the command_str into argv
-                argv = pc.command_str.split()
+                # Generic: split command_str into argv (handles "go build ./...", etc.)
+                import shlex
+
+                try:
+                    argv = shlex.split(pc.command_str, posix=True)
+                except ValueError:
+                    argv = pc.command_str.split()
 
             script_name = pc.scripts[0] if pc.scripts else pc.command_str
             log_path = make_log_path(
