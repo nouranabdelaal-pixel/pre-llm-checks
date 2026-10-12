@@ -17,8 +17,12 @@ Run with `--steps build,lint,tests`.
 | lint-fail  | PASS  | FAIL | PASS  | 1    |
 | no-tests   | PASS  | SKIP | SKIP  | 0    |
 
-Note: `ok` runs `node --test test.mjs` (real test) → PASS.
+Note: `ok` runs `node --test test.mjs` (real test) → PASS (not WARN).
 Note: `test-fail` has no `lint` script so Lint=SKIP; run with `--steps build,tests`.
+Note: `config-trigger` has `.eslintrc.json` but no `lint` npm script. Config triggers
+  no longer generate synthetic commands → Lint=SKIP (not an unrunnable fail).
+
+| config-trigger | PASS | SKIP | SKIP | 0 | has .eslintrc but no lint script |
 
 ---
 
@@ -34,8 +38,13 @@ No `build` stage. Run with `--steps lint,tests`.
 | no-tests     | PASS | SKIP  | 0    |
 | missing-deps | SKIP | WARN  | 0    |
 
-Note: `ok` runs `python -m unittest discover` (real test) → PASS.
-Note: `missing-deps` maps `ModuleNotFoundError` output to `dependencies_missing` warning.
+Note: `ok` runs `python -m unittest discover` (real test) → PASS (not WARN).
+Note: `missing-deps` maps `ModuleNotFoundError` output to `dependencies_missing` warning
+  AND now emits a structured Warning entry in the report (type=dependencies_missing).
+Note: `entry-points` has only `[project.scripts]` PEP 621 entry points which are NOT
+  shell commands → no runnable scripts found → nothing_to_run warning, all stages SKIP.
+
+| entry-points | SKIP | SKIP | 0 | [project.scripts] entry points ignored |
 
 ---
 
@@ -105,7 +114,21 @@ Note: `coverage-stale` has a pre-committed `coverage/coverage-summary.json`.
 
 ## Other shared fixtures
 
-| Fixture      | Purpose                                              |
-|--------------|------------------------------------------------------|
-| monorepo     | Two projects (node + python) in one tree             |
-| missing-deps | Node project with no `node_modules/` — deps warning  |
+| Fixture      | Purpose                                                     |
+|--------------|-------------------------------------------------------------|
+| monorepo     | Two projects (node + python) in one tree                    |
+| missing-deps | Node project with no `node_modules/` — dependencies_missing Warning emitted |
+
+---
+
+## Spec compliance notes (fixes applied)
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Unexpected exception wrote no report | `main()` now catches all non-SystemExit exceptions, writes `summary.status="error"` report, exits 2 |
+| 2 | `summary.status="warning"` when only stage-warnings | Status is now always `"pass"` unless there is a hard fail or timeout; warnings alone → pass + exit 0 |
+| 3 | `tool_not_installed` / `dependencies_missing` not in warnings list | Both now emit structured `Warning` entries visible in the JSON `warnings` array |
+| 4 | Config-trigger path generated unrunnable `[eslint via .eslintrc]` commands | Removed; config triggers are detection-only; runnable commands must come from declared scripts or builtin_triggers |
+| 5 | `[project.scripts]` PEP 621 entry points treated as shell commands | `_read_declared_scripts` no longer reads `[project.scripts]`; only `[tool.taskipy.tasks]` |
+| 6 | Long identifiers and git SHAs masked by `{32,}` patterns | Hex pattern raised to `{64,}`; base64 pattern now requires `+` or `/` in the match |
+| 7 | `ok` fixtures showed Tests=WARN due to false-positive in `_zero_tests_detected` | Fixed in previous session; `ok` now shows Tests=PASS |

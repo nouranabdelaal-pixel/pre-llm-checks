@@ -1,0 +1,10 @@
+{
+  "name": "config-trigger",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\""
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0"
+  }
+}

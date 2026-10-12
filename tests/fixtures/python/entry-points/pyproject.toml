@@ -1,0 +1,9 @@
+[project]
+name = "entry-points"
+version = "0.1.0"
+
+# These are PEP 621 entry points (installed console scripts), NOT shell commands.
+# pre-llm-checks must NOT treat them as lint/test commands.
+[project.scripts]
+myapp = "mypackage:main"
+mytool = "mypackage.cli:run"
