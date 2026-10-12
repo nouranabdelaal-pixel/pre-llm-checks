@@ -1,0 +1,14 @@
+{
+  "name": "risky-scripts",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "lint": "node -e \"process.exit(0)\"",
+    "lint:fix": "node -e \"process.exit(0)\"",
+    "lint:watch": "node -e \"process.exit(0)\"",
+    "test": "node -e \"process.exit(0)\"",
+    "test:e2e": "node -e \"process.exit(0)\"",
+    "test:docker": "node -e \"process.exit(0)\"",
+    "deploy": "node -e \"process.exit(0)\""
+  }
+}

@@ -1,0 +1,8 @@
+// java-gradle/ok fixture
+// Requires Gradle on PATH or a gradlew wrapper to run.
+plugins {
+    id 'java'
+}
+
+group = 'com.example'
+version = '1.0.0'

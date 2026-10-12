@@ -1,0 +1,8 @@
+{
+  "name": "hang",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "test": "node -e \"setTimeout(()=>{},9999999)\""
+  }
+}

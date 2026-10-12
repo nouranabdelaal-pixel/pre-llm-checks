@@ -1,0 +1,8 @@
+{
+  "name": "coverage-stale",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node --test test.mjs",
+    "coverage": "node -e \"process.exit(0)\""
+  }
+}

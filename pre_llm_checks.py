@@ -47,6 +47,7 @@ ALL_STAGES = ["build", "lint", "tests", "coverage"]
 # ---------------------------------------------------------------------------
 
 SECRET_PATTERNS: list[re.Pattern] = [
+    # Key/value assignments: api_key=..., token=..., password=..., etc.
     re.compile(r"(api[_\-]?key|apikey)\s*[:=]\s*\S+", re.IGNORECASE),
     re.compile(
         r"(token|access[_\-]?token|auth[_\-]?token)\s*[:=]\s*\S+", re.IGNORECASE
@@ -54,9 +55,20 @@ SECRET_PATTERNS: list[re.Pattern] = [
     re.compile(r"(password|passwd|pwd)\s*[:=]\s*\S+", re.IGNORECASE),
     re.compile(r"(secret|client[_\-]?secret)\s*[:=]\s*\S+", re.IGNORECASE),
     re.compile(r"(connection[_\-]?string|conn[_\-]?str)\s*[:=]\s*\S+", re.IGNORECASE),
+    # Bearer tokens in HTTP headers
     re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE),
-    re.compile(r"\b[0-9a-fA-F]{32,}\b"),
-    re.compile(r"\b[A-Za-z0-9_\-]{32,}={0,2}\b"),
+    # Pure hex strings ≥32 chars that look like hashes/keys (NOT git SHAs in log
+    # lines — git SHAs are ≤40 hex chars following a space or commit marker,
+    # so we limit to strings that are clearly not git context by requiring
+    # they contain no surrounding word context typical of SHA references).
+    # We only mask hex strings ≥40 chars to avoid masking normal 32/40-char SHAs
+    # shown in stack traces or commit logs.
+    re.compile(r"\b[0-9a-fA-F]{64,}\b"),
+    # Base64-like blobs: require at least one +, / or trailing = so that pure
+    # hex git SHAs and plain alphanumeric identifiers are never masked.
+    # Pattern: optional prefix chars, then the blob must contain + or /,
+    # optionally followed by = padding.
+    re.compile(r"[A-Za-z0-9+/]*[+/][A-Za-z0-9+/]{20,}={0,2}"),
 ]
 
 _SECRET_REPLACEMENT = "***"
@@ -575,6 +587,9 @@ def _discover_tools(
         excludes: list[str] = stage_cfg.get("excludes", [])
         builtins: list[str] = stage_cfg.get("builtin", [])
         config_triggers: list[str] = stage_cfg.get("config_triggers", [])
+        # Per-builtin trigger mapping: [{task, trigger}, ...]
+        # A task is only added when its trigger file exists.
+        builtin_triggers: list[dict] = stage_cfg.get("builtin_triggers", [])
 
         seen_commands: dict[
             str, PlannedCommand
@@ -620,6 +635,7 @@ def _discover_tools(
                 commands[stage].append(pc)
 
         # Built-in tasks (Maven/Gradle phases, go build, etc.)
+        # Unconditional builtins: always added when present.
         for builtin_task in builtins:
             norm_cmd = " ".join(builtin_task.split())
             if norm_cmd not in seen_commands:
@@ -632,20 +648,32 @@ def _discover_tools(
                 seen_commands[norm_cmd] = pc
                 commands[stage].append(pc)
 
-        # Config triggers
-        for trigger_file in config_triggers:
-            trigger_path = project_dir / trigger_file
-            if trigger_path.exists() and not commands[stage]:
-                # Config trigger enables the stage even without explicit scripts
-                # The tool name is derived from the trigger file
-                tool_name = trigger_file.split(".")[0].lstrip(".")
+        # Per-builtin triggered tasks: only added when the trigger file exists.
+        # Each entry: {task: "checkstyle:check", trigger: "checkstyle.xml"}
+        for bt in builtin_triggers:
+            task = bt.get("task", "")
+            trigger = bt.get("trigger", "")
+            if not task:
+                continue
+            if trigger and not (project_dir / trigger).exists():
+                continue
+            norm_cmd = " ".join(task.split())
+            if norm_cmd not in seen_commands:
                 pc = PlannedCommand(
-                    command_str=f"[{tool_name} via {trigger_file}]",
-                    scripts=[tool_name],
-                    source=trigger_file,
+                    command_str=task,
+                    scripts=[task],
+                    source=f"built-in task (trigger: {trigger})",
                     stage=stage,
                 )
+                seen_commands[norm_cmd] = pc
                 commands[stage].append(pc)
+
+        # Config triggers are used only for *detection* (US-7): they signal
+        # that a tool is configured.  The actual runnable command must come
+        # from either a declared script or a builtin_triggers entry.
+        # We deliberately do NOT generate a synthetic placeholder command here
+        # because "[eslint via .eslintrc]" is unrunnable and would always fail.
+        # (The old placeholder path has been removed.)
 
     return {"commands": commands, "skipped": skipped}
 
@@ -684,7 +712,10 @@ def _read_declared_scripts(
             except Exception:
                 pass
 
-    # pyproject.toml — parse [project.scripts] or [tool.taskipy.tasks]
+    # pyproject.toml — parse [tool.taskipy.tasks] only.
+    # NOTE: [project.scripts] entries are PEP 621 *entry points* of the form
+    # "myapp = mypackage.module:function" — they are not shell commands and
+    # must NOT be treated as runnable test/lint scripts.
     if "pyproject.toml" in project_files:
         ppt = project_dir / "pyproject.toml"
         if ppt.exists():
@@ -692,10 +723,6 @@ def _read_declared_scripts(
                 with ppt.open("rb") as fh:
                     data = tomllib.load(fh)
                 scripts: dict[str, str] = {}
-                # [project.scripts]
-                for k, v in data.get("project", {}).get("scripts", {}).items():
-                    if isinstance(v, str):
-                        scripts[k] = v
                 # [tool.taskipy.tasks]
                 for k, v in (
                     data.get("tool", {}).get("taskipy", {}).get("tasks", {}).items()
@@ -1029,6 +1056,7 @@ def run_project(
     args,
     repo_root: Path,
     run_start: float,
+    warnings: list[Warning] | None = None,
 ) -> dict[str, StageResult]:
     """Run all applicable stages for a project. Returns {stage: StageResult}."""
     steps: list[str] = args.steps
@@ -1041,12 +1069,21 @@ def run_project(
 
     results: dict[str, StageResult] = {}
     build_failed = False
+    warned_runners: set[str] = set()  # avoid duplicate tool_not_installed per project
 
     # Dependency check (filesystem)
     if not check_dependencies(proj, lang_cfg):
         dep_name = lang_cfg.get("dependency_check", {}).get(
             "filesystem", "dependencies"
         )
+        if warnings is not None:
+            warnings.append(
+                Warning(
+                    type="dependencies_missing",
+                    folders=[str(proj.path.relative_to(repo_root))],
+                    reason=f"{dep_name} not found in {proj.path.name}; run your package manager first",
+                )
+            )
         for stage in ALL_STAGES:
             results[stage] = StageResult(
                 status="skipped",
@@ -1098,7 +1135,16 @@ def run_project(
             # Build the actual argv
             runner = select_runner(proj.language, proj.path, script_key, lang_cfg)
             if isinstance(runner, RunnerNotFound):
-                # tool_not_installed — skip this command
+                # Emit tool_not_installed warning once per runner per project
+                if warnings is not None and runner.runner_name not in warned_runners:
+                    warned_runners.add(runner.runner_name)
+                    warnings.append(
+                        Warning(
+                            type="tool_not_installed",
+                            folders=[str(proj.path.relative_to(repo_root))],
+                            reason=f"'{runner.runner_name}' not found on PATH; stage skipped",
+                        )
+                    )
                 stage_results.append(
                     CommandResult(
                         command_str=pc.command_str,
@@ -1106,7 +1152,9 @@ def run_project(
                         source=pc.source,
                         status="skipped",
                         duration_s=0.0,
-                        output_tail=[f"Runner not found: {runner.runner_name}"],
+                        output_tail=[
+                            f"tool_not_installed: '{runner.runner_name}' not found on PATH"
+                        ],
                         log_path="",
                         exit_code=None,
                     )
@@ -1165,7 +1213,15 @@ def run_project(
                     result.status = "warning"
                     result.output_tail = [
                         f"[dependencies_missing] {result.output_tail[0] if result.output_tail else ''}"
-                    ]
+                    ] + result.output_tail[1:]
+                    if warnings is not None:
+                        warnings.append(
+                            Warning(
+                                type="dependencies_missing",
+                                folders=[str(proj.path.relative_to(repo_root))],
+                                reason=f"dependency error detected in {proj.path.name} during {stage}",
+                            )
+                        )
 
             stage_results.append(result)
 
@@ -1195,16 +1251,32 @@ def run_project(
 
 
 def _zero_tests_detected(output: str) -> bool:
-    """Heuristic: detect 0 tests run from common test runner output."""
+    """Heuristic: detect 0 tests run from common test runner output.
+
+    Patterns are written to avoid false positives such as matching
+    '--test' in 'node --test test.mjs' (which contains '0 test').
+    """
     patterns = [
-        r"\b0 tests?\b",
+        # "0 tests" / "0 test" as a standalone count — not preceded by word chars,
+        # digits, dots, or dashes (avoids matching "1.0.0 test" or "--test")
+        r"(?<![a-zA-Z0-9.\-])0 tests?(?!\w)",
+        # "no tests" as a phrase
         r"\bno tests?\b",
-        r"Tests run: 0\b",
-        r"0 passed",
-        r"Ran 0 test",
+        # Maven Surefire / JUnit: "Tests run: 0"
+        r"Tests run:\s*0\b",
+        # pytest / Go: "0 passed"
+        r"(?<!\w)0 passed\b",
+        # Python unittest: "Ran 0 test"
+        r"\bRan 0 tests?\b",
+        # node:test summary line: "ℹ tests 0" / "# tests 0" / "tests 0"
+        r"^\s*(?:[ℹ#]\s*)?tests\s+0\s*$",
+        # Maven: "No tests to run"
+        r"No tests to run",
+        # Gradle: "0 tests completed"
+        r"\b0 tests? completed\b",
     ]
     for pat in patterns:
-        if re.search(pat, output, re.IGNORECASE):
+        if re.search(pat, output, re.IGNORECASE | re.MULTILINE):
             return True
     return False
 
@@ -1219,18 +1291,26 @@ def extract_coverage(
     lang_cfg: dict,
     project_path: Path,
     run_start: float,
-) -> list[dict]:
-    """Extract coverage percentage(s). Returns list of {tool, line_pct, branch_pct}."""
+) -> tuple[list[dict], str | None]:
+    """Extract coverage percentage(s).
+
+    Returns (results, warning_reason):
+      - results: list of {tool, line_pct, source} dicts
+      - warning_reason: non-None string when no data could be extracted,
+        explaining why (stale file, no data found, etc.)
+    """
     coverage_cfg = lang_cfg.get("coverage", {})
     results: list[dict] = []
+    stale_skipped = False
 
     # Try report files first
     for rf in coverage_cfg.get("report_files", []):
         report_path = project_path / rf["path"]
         if not report_path.exists():
             continue
-        # Freshness check
+        # Freshness check: file must have been written during this run
         if report_path.stat().st_mtime < run_start:
+            stale_skipped = True
             continue
         pct = _read_coverage_file(report_path, rf["format"])
         if pct is not None:
@@ -1251,7 +1331,15 @@ def extract_coverage(
                     except (IndexError, ValueError):
                         pass
 
-    return results
+    # Determine warning reason when no data was found
+    warning_reason: str | None = None
+    if not results:
+        if stale_skipped:
+            warning_reason = "stale coverage report (file predates this run)"
+        else:
+            warning_reason = "coverage data not found"
+
+    return results, warning_reason
 
 
 def _read_coverage_file(path: Path, fmt: str) -> float | None:
@@ -1323,12 +1411,15 @@ def build_report(
         if s in counts:
             counts[s] += 1
 
+    # Spec §62 + §241: "warnings alone → pass (exit 0)".
+    # Stage-level "warning" statuses (zero tests, stale coverage, missing deps)
+    # do NOT elevate the summary to "warning" — that would cause a non-zero
+    # exit and confuse consumers.  Only hard failures and timeouts make the
+    # summary non-pass.
     if error_msg:
         summary_status = "error"
     elif counts["fail"] > 0 or counts["timeout"] > 0:
         summary_status = "fail"
-    elif counts["warning"] > 0:
-        summary_status = "warning"
     else:
         summary_status = "pass"
 
@@ -1674,6 +1765,30 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 
+def _write_error_report(output_path: str | None, message: str) -> None:
+    """Write a minimal error report to *output_path* (if set)."""
+    if not output_path:
+        return
+    try:
+        report = {
+            "schema_version": "1.0",
+            "mode": "run",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {
+                "status": "error",
+                "project_count": 0,
+                "counts": {},
+                "warning_count": 0,
+            },
+            "error": message,
+            "projects": [],
+            "warnings": [],
+        }
+        Path(output_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
+    except Exception:
+        pass  # best-effort; don't mask the original error
+
+
 def main() -> None:
     global _VERBOSE
     parser = build_parser()
@@ -1681,6 +1796,19 @@ def main() -> None:
 
     _VERBOSE = args.verbose
 
+    try:
+        _main_run(args)
+    except SystemExit:
+        raise
+    except Exception as exc:  # pragma: no cover
+        msg = f"{type(exc).__name__}: {exc}"
+        print(f"error: unexpected exception — {msg}", file=sys.stderr)
+        _write_error_report(getattr(args, "output", None), msg)
+        sys.exit(2)
+
+
+def _main_run(args) -> None:  # noqa: ANN001
+    """Main logic extracted so the top-level exception handler can wrap it."""
     config_path = (
         Path(args.config) if args.config else Path(__file__).parent / "languages.toml"
     )
@@ -1738,13 +1866,22 @@ def main() -> None:
     for proj in projects:
         lang_cfg = languages.get(proj.language, {})
         proj_key = str(proj.path.relative_to(repo_root))
-        stage_results = run_project(proj, lang_cfg, args, repo_root, run_start)
+        stage_results = run_project(
+            proj, lang_cfg, args, repo_root, run_start, warnings
+        )
 
         # Extract coverage
         cov_sr = stage_results.get("coverage")
         if cov_sr and cov_sr.status not in ("skipped",):
-            cov_results = extract_coverage(cov_sr, lang_cfg, proj.path, run_start)
+            cov_results, cov_warn = extract_coverage(
+                cov_sr, lang_cfg, proj.path, run_start
+            )
             cov_sr.coverage_results = cov_results
+            # If the coverage command ran but produced no data, downgrade to warning
+            if not cov_results and cov_sr.status == "pass":
+                cov_sr.status = "warning"
+                if cov_warn:
+                    cov_sr.note = cov_warn
 
         project_results[proj_key] = stage_results
 

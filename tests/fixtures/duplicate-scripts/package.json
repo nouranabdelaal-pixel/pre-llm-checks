@@ -1,0 +1,9 @@
+{
+  "name": "duplicate-scripts",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "test": "node --test test.mjs",
+    "test:unit": "node --test test.mjs"
+  }
+}
