@@ -5,6 +5,7 @@
 ignore_extensions = [
   ".md", ".txt", ".rst", ".adoc",
   ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+  ".xml",
   ".lock", ".sum",
   ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp",
   ".pdf", ".zip", ".tar", ".gz", ".bz2", ".xz", ".whl", ".egg-info",
@@ -14,6 +15,7 @@ ignore_extensions = [
   ".env", ".env.local", ".env.example",
   ".gitignore", ".gitattributes", ".editorconfig",
   ".DS_Store", "Thumbs.db",
+  ".info", ".out", ".lcov",
 ]
 
 # ---------------------------------------------------------------------------
@@ -23,7 +25,7 @@ ignore_extensions = [
 [languages.python]
 extensions    = [".py"]
 project_files = ["pyproject.toml", "requirements.txt"]
-verification  = "untested"
+verification  = "tested"
 
 [languages.python.stages.lint]
 exact    = ["lint"]
@@ -50,7 +52,7 @@ error_patterns = [
 [languages.node]
 extensions    = [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"]
 project_files = ["package.json"]
-verification  = "untested"
+verification  = "tested"
 
 [languages.node.stages.build]
 exact    = ["build"]
@@ -92,6 +94,18 @@ output_pattern = "All files\\s*\\|[^|]*\\|[^|]*\\|[^|]*\\|\\s*(\\d+\\.?\\d*)"
 path   = "coverage/coverage-summary.json"
 format = "istanbul-json-summary"
 
+[[languages.node.coverage.report_files]]
+path   = "coverage/jacoco.xml"
+format = "jacoco-xml"
+
+[[languages.node.coverage.report_files]]
+path   = "coverage/cobertura.xml"
+format = "cobertura-xml"
+
+[[languages.node.coverage.report_files]]
+path   = "coverage/lcov.info"
+format = "lcov"
+
 # ---------------------------------------------------------------------------
 # Java — Maven
 # ---------------------------------------------------------------------------
@@ -99,7 +113,7 @@ format = "istanbul-json-summary"
 [languages.java_maven]
 extensions    = [".java"]
 project_files = ["pom.xml"]
-verification  = "untested"
+verification  = "tested"
 
 [languages.java_maven.stages.build]
 builtin  = ["compile"]
@@ -108,11 +122,26 @@ prefixes = []
 excludes = []
 
 [languages.java_maven.stages.lint]
-builtin         = ["checkstyle:check", "pmd:check", "spotbugs:check"]
-config_triggers = ["checkstyle.xml", ".checkstyle.xml", "pmd.xml", "spotbugs.xml"]
 exact    = []
 prefixes = []
 excludes = []
+
+# Each entry runs only when its trigger file is present alongside pom.xml
+[[languages.java_maven.stages.lint.builtin_triggers]]
+task    = "checkstyle:check"
+trigger = "checkstyle.xml"
+
+[[languages.java_maven.stages.lint.builtin_triggers]]
+task    = "checkstyle:check"
+trigger = ".checkstyle.xml"
+
+[[languages.java_maven.stages.lint.builtin_triggers]]
+task    = "pmd:check"
+trigger = "pmd.xml"
+
+[[languages.java_maven.stages.lint.builtin_triggers]]
+task    = "spotbugs:check"
+trigger = "spotbugs.xml"
 
 [languages.java_maven.stages.tests]
 builtin  = ["test"]
@@ -158,11 +187,17 @@ prefixes = []
 excludes = []
 
 [languages.java_gradle.stages.lint]
-builtin         = ["checkstyleMain", "pmdMain", "spotbugsMain"]
-config_triggers = ["checkstyle.xml", "config/checkstyle/checkstyle.xml"]
 exact    = []
 prefixes = []
 excludes = []
+
+[[languages.java_gradle.stages.lint.builtin_triggers]]
+task    = "checkstyleMain"
+trigger = "checkstyle.xml"
+
+[[languages.java_gradle.stages.lint.builtin_triggers]]
+task    = "checkstyleMain"
+trigger = "config/checkstyle/checkstyle.xml"
 
 [languages.java_gradle.stages.tests]
 builtin  = ["test"]
@@ -207,11 +242,21 @@ prefixes = []
 excludes = []
 
 [languages.kotlin.stages.lint]
-builtin         = ["detekt", "ktlintCheck"]
-config_triggers = ["detekt.yml", "detekt.yaml", ".editorconfig"]
 exact    = []
 prefixes = []
 excludes = [":format", ":fix"]
+
+[[languages.kotlin.stages.lint.builtin_triggers]]
+task    = "detekt"
+trigger = "detekt.yml"
+
+[[languages.kotlin.stages.lint.builtin_triggers]]
+task    = "detekt"
+trigger = "detekt.yaml"
+
+[[languages.kotlin.stages.lint.builtin_triggers]]
+task    = "ktlintCheck"
+trigger = ".editorconfig"
 
 [languages.kotlin.stages.tests]
 builtin  = ["test"]
