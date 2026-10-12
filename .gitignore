@@ -1,3 +1,4 @@
 .pre-llm/
 pre-llm-report.json
 __pycache__/
+.ruff_cache/
