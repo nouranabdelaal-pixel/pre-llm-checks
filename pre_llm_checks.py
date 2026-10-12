@@ -575,6 +575,9 @@ def _discover_tools(
         excludes: list[str] = stage_cfg.get("excludes", [])
         builtins: list[str] = stage_cfg.get("builtin", [])
         config_triggers: list[str] = stage_cfg.get("config_triggers", [])
+        # Per-builtin trigger mapping: [{task, trigger}, ...]
+        # A task is only added when its trigger file exists.
+        builtin_triggers: list[dict] = stage_cfg.get("builtin_triggers", [])
 
         seen_commands: dict[
             str, PlannedCommand
@@ -620,6 +623,7 @@ def _discover_tools(
                 commands[stage].append(pc)
 
         # Built-in tasks (Maven/Gradle phases, go build, etc.)
+        # Unconditional builtins: always added when present.
         for builtin_task in builtins:
             norm_cmd = " ".join(builtin_task.split())
             if norm_cmd not in seen_commands:
@@ -627,6 +631,26 @@ def _discover_tools(
                     command_str=builtin_task,
                     scripts=[builtin_task],
                     source="built-in task",
+                    stage=stage,
+                )
+                seen_commands[norm_cmd] = pc
+                commands[stage].append(pc)
+
+        # Per-builtin triggered tasks: only added when the trigger file exists.
+        # Each entry: {task: "checkstyle:check", trigger: "checkstyle.xml"}
+        for bt in builtin_triggers:
+            task = bt.get("task", "")
+            trigger = bt.get("trigger", "")
+            if not task:
+                continue
+            if trigger and not (project_dir / trigger).exists():
+                continue
+            norm_cmd = " ".join(task.split())
+            if norm_cmd not in seen_commands:
+                pc = PlannedCommand(
+                    command_str=task,
+                    scripts=[task],
+                    source=f"built-in task (trigger: {trigger})",
                     stage=stage,
                 )
                 seen_commands[norm_cmd] = pc
@@ -1195,16 +1219,32 @@ def run_project(
 
 
 def _zero_tests_detected(output: str) -> bool:
-    """Heuristic: detect 0 tests run from common test runner output."""
+    """Heuristic: detect 0 tests run from common test runner output.
+
+    Patterns are written to avoid false positives such as matching
+    '--test' in 'node --test test.mjs' (which contains '0 test').
+    """
     patterns = [
-        r"\b0 tests?\b",
+        # "0 tests" / "0 test" as a standalone count — not preceded by word chars,
+        # digits, dots, or dashes (avoids matching "1.0.0 test" or "--test")
+        r"(?<![a-zA-Z0-9.\-])0 tests?(?!\w)",
+        # "no tests" as a phrase
         r"\bno tests?\b",
-        r"Tests run: 0\b",
-        r"0 passed",
-        r"Ran 0 test",
+        # Maven Surefire / JUnit: "Tests run: 0"
+        r"Tests run:\s*0\b",
+        # pytest / Go: "0 passed"
+        r"(?<!\w)0 passed\b",
+        # Python unittest: "Ran 0 test"
+        r"\bRan 0 tests?\b",
+        # node:test summary line: "ℹ tests 0" / "# tests 0" / "tests 0"
+        r"^\s*(?:[ℹ#]\s*)?tests\s+0\s*$",
+        # Maven: "No tests to run"
+        r"No tests to run",
+        # Gradle: "0 tests completed"
+        r"\b0 tests? completed\b",
     ]
     for pat in patterns:
-        if re.search(pat, output, re.IGNORECASE):
+        if re.search(pat, output, re.IGNORECASE | re.MULTILINE):
             return True
     return False
 
@@ -1219,18 +1259,26 @@ def extract_coverage(
     lang_cfg: dict,
     project_path: Path,
     run_start: float,
-) -> list[dict]:
-    """Extract coverage percentage(s). Returns list of {tool, line_pct, branch_pct}."""
+) -> tuple[list[dict], str | None]:
+    """Extract coverage percentage(s).
+
+    Returns (results, warning_reason):
+      - results: list of {tool, line_pct, source} dicts
+      - warning_reason: non-None string when no data could be extracted,
+        explaining why (stale file, no data found, etc.)
+    """
     coverage_cfg = lang_cfg.get("coverage", {})
     results: list[dict] = []
+    stale_skipped = False
 
     # Try report files first
     for rf in coverage_cfg.get("report_files", []):
         report_path = project_path / rf["path"]
         if not report_path.exists():
             continue
-        # Freshness check
+        # Freshness check: file must have been written during this run
         if report_path.stat().st_mtime < run_start:
+            stale_skipped = True
             continue
         pct = _read_coverage_file(report_path, rf["format"])
         if pct is not None:
@@ -1251,7 +1299,15 @@ def extract_coverage(
                     except (IndexError, ValueError):
                         pass
 
-    return results
+    # Determine warning reason when no data was found
+    warning_reason: str | None = None
+    if not results:
+        if stale_skipped:
+            warning_reason = "stale coverage report (file predates this run)"
+        else:
+            warning_reason = "coverage data not found"
+
+    return results, warning_reason
 
 
 def _read_coverage_file(path: Path, fmt: str) -> float | None:
@@ -1743,8 +1799,15 @@ def main() -> None:
         # Extract coverage
         cov_sr = stage_results.get("coverage")
         if cov_sr and cov_sr.status not in ("skipped",):
-            cov_results = extract_coverage(cov_sr, lang_cfg, proj.path, run_start)
+            cov_results, cov_warn = extract_coverage(
+                cov_sr, lang_cfg, proj.path, run_start
+            )
             cov_sr.coverage_results = cov_results
+            # If the coverage command ran but produced no data, downgrade to warning
+            if not cov_results and cov_sr.status == "pass":
+                cov_sr.status = "warning"
+                if cov_warn:
+                    cov_sr.note = cov_warn
 
         project_results[proj_key] = stage_results
 
